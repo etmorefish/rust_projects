@@ -205,4 +205,55 @@ mod tests {
         println!("{}", pretty_json.green());
         Ok(())
     }
+
+    #[test]
+    fn test_syntect() {
+        use syntect::easy::HighlightLines;
+        use syntect::highlighting::{Color, Style, ThemeSet};
+        use syntect::html::highlighted_html_for_file;
+        use syntect::parsing::SyntaxSet;
+        use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+
+        // Load these once at the start of your program
+        let ss = SyntaxSet::load_defaults_newlines();
+        let ts = ThemeSet::load_defaults();
+
+        let syntax = ss.find_syntax_by_extension("rs").unwrap();
+        let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.light"]);
+        let s = "pub struct Wow { hi: u64 }\nfn blah() -> u64 {}";
+        for line in LinesWithEndings::from(s) {
+            //  LinesWithEndings enables use of newlines mode
+            let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ss).unwrap();
+            let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+            print!("{}", escaped);
+        }
+
+        println!();
+
+        // let args: Vec<String> = std::env::args().collect();
+        let args: Vec<String> = ["hello".to_string(), "world".to_string()].to_vec();
+        if args.len() < 2 {
+            println!("Please pass in a file to highlight");
+            return;
+        }
+
+        let style = "
+            pre {
+                font-size:13px;
+                font-family: Consolas, \"Liberation Mono\", Menlo, Courier, monospace;
+            }";
+        println!(
+            "<head><title>{}</title><style>{}</style></head>",
+            &args[1], style
+        );
+        let theme = &ts.themes["base16-ocean.dark"];
+        let c = theme.settings.background.unwrap_or(Color::WHITE);
+        println!(
+            "<body style=\"background-color:#{:02x}{:02x}{:02x};\">\n",
+            c.r, c.g, c.b
+        );
+        let html = highlighted_html_for_file(&args[1], &ss, theme).unwrap();
+        println!("{}", html);
+        println!("</body>");
+    }
 }
