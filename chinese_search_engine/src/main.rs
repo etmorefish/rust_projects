@@ -2,11 +2,15 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use clap::{command, Parser};
 use jieba_rs::Jieba;
+use once_cell::sync::Lazy;
 use regex::Regex;
+
+static JIEBA: Lazy<Jieba> = Lazy::new(|| Jieba::new());
 
 #[derive(Debug)]
 struct ChineseSearchEngine {
@@ -38,8 +42,8 @@ impl ChineseSearchEngine {
         self.doc_path.insert(doc_id.clone(), doc_path);
         self.doc_count += 1;
 
-        let jieba = Jieba::new();
-        let tokens = jieba
+        // let jieba = Jieba::new();
+        let tokens = JIEBA
             .cut_for_search(doc_content.as_str(), false)
             .into_iter()
             .filter(|t| *t != " ")
@@ -71,9 +75,9 @@ impl ChineseSearchEngine {
 
     /// 搜索功能，支持多关键字查询
     fn search(&self, query: String) -> Vec<(String, f64)> {
-        let jieba = Jieba::new();
+        // let jieba = Jieba::new();
         let query = preprocess_text(&query);
-        let query_tokens = jieba
+        let query_tokens = JIEBA
             .cut_for_search(query.as_str(), false)
             .into_iter()
             .filter(|t| *t != " ")
@@ -175,7 +179,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-
+    let start = Instant::now();
     let mut engine = ChineseSearchEngine::new();
     // let path = Path::new(r"C:\Users\maol\Documents\tmp\ChineseSearchEngine\SchoolChinese");
     let path = Path::new(&args.path);
@@ -196,8 +200,12 @@ fn main() {
         }
     }
     println!("文档加载完成!");
+    let d1 = start.elapsed();
+    println!("文档加载完成! 耗时 {:?}", d1); // 118.2912137s  -> 1.8479948s
     let res = engine.search("世界经济学是一门非常大的社会科学".to_string());
     println!("{:?}", res);
+    let d2 = start.elapsed();
+    println!("搜索耗时: {:?}", d2 - d1); // 1.0176191s  -> 6.8462ms
     println!("Done!");
 }
 
