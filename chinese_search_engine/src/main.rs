@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use clap::{command, Parser};
 use jieba_rs::Jieba;
 use regex::Regex;
 
@@ -59,12 +60,51 @@ impl ChineseSearchEngine {
     }
 
     /// 计算逆文档频率(IDF)，用于评估词的重要性
-    fn compute_idf(self, term: String) {}
+    fn compute_idf(&self, term: String) -> f64 {
+        let nt = self.inverted_index.get(&term).unwrap().len();
+        ((1 + self.doc_count) as f64 / (1 + nt) as f64).ln()
+    }
+
     /// 返回与查询词匹配的文档中的一段文本。
     /// 这个实现尝试找到所有关键词匹配的最佳覆盖范围。
-    fn get_text_preview(self, doc_id: String, query: String) {}
+    fn get_text_preview(&self, doc_id: String, query: String) {}
+
     /// 搜索功能，支持多关键字查询
-    fn search(self, query: String) {}
+    fn search(&self, query: String) -> Vec<(String, f64)> {
+        let jieba = Jieba::new();
+        let query = preprocess_text(&query);
+        let query_tokens = jieba
+            .cut_for_search(query.as_str(), false)
+            .into_iter()
+            .filter(|t| *t != " ")
+            .map(|t| t.to_string())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<String>>();
+
+        let mut docs_scores = HashMap::new();
+        println!("{:?}", query_tokens);
+        for token in query_tokens {
+            if self.inverted_index.contains_key(&token) {
+                let idf = self.compute_idf(token.clone());
+                for doc_id in self.inverted_index.get(&token).unwrap() {
+                    let doc_freq = self.doc_term_freq.get(doc_id).unwrap();
+                    let cur_token_freq = doc_freq.get(&token).unwrap();
+                    let cur_token_freq_total = doc_freq.values().fold(0, |acc, x| acc + x);
+                    let tf = *cur_token_freq as f64 / cur_token_freq_total as f64;
+                    let entry = docs_scores.entry(doc_id.clone()).or_insert(0.0);
+                    *entry += tf * idf;
+                }
+            }
+        }
+
+        let mut result = Vec::new();
+        for (doc_id, score) in docs_scores {
+            result.push((doc_id, score));
+        }
+
+        result
+    }
 }
 
 /// 遍历一个文件夹及其子文件夹
@@ -118,12 +158,31 @@ fn preprocess_text(text: &str) -> String {
     re.replace_all(text, " ").to_string()
 }
 
+#[derive(Debug, Parser)] // requires `derive` feature
+#[command(
+    name = "chinese_search_engine",
+    version = "0.1.0",
+    author = "leo <maolei025@qq.com>",
+    about = "A simple Chinese search engine implemention with Rust ,can you imagine how easy it is?"
+)]
+struct Args {
+    /// Name of the person to greet
+    #[arg(short, long)]
+    path: String, // Number of times to greet
+                  // #[arg(short, long, default_value_t = 1)]
+                  // count: u8,
+}
+
 fn main() {
+    let args = Args::parse();
+
     let mut engine = ChineseSearchEngine::new();
-    let path = Path::new(r"C:\Users\maol\Documents\tmp\ChineseSearchEngine\SchoolChinese");
+    // let path = Path::new(r"C:\Users\maol\Documents\tmp\ChineseSearchEngine\SchoolChinese");
+    let path = Path::new(&args.path);
 
     let ignore_dirs = [".git", ".idea"];
     let ignore_exts = ["cpp", "py"];
+    println!("开始加载文档!");
     let filtered_paths = visit_dirs_and_filter(path, &ignore_dirs, &ignore_exts).unwrap();
     for path in filtered_paths {
         if path.extension().and_then(|e| e.to_str()) == Some("md") {
@@ -132,9 +191,13 @@ fn main() {
             let content = preprocess_text(&content);
             // 用一种方式来唯一标识每个文档，这里使用文件名
             let doc_id = path.file_name().unwrap().to_str().unwrap().to_string();
+            println!("正在导入 {} .", doc_id);
             engine.add_document(doc_id, path.to_str().unwrap().to_string(), content);
         }
     }
+    println!("文档加载完成!");
+    let res = engine.search("世界经济学是一门非常大的社会科学".to_string());
+    println!("{:?}", res);
     println!("Done!");
 }
 
@@ -239,5 +302,18 @@ mod tests {
         // 替换多余的空白行为单个换行符
         let text = re_empty_lines.replace_all(&text, " ");
         println!("{}", text);
+    }
+
+    #[test]
+    fn test_vec() {
+        let mut v = vec![1, 2, 2, 2, 3, 4, 5, 2, 4];
+        // v.sort();
+        // v.dedup();  // if sorted，use it
+        let s = v
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<i32>>();
+        println!("{:?}", s);
     }
 }
