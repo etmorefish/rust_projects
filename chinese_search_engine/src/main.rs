@@ -1,12 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     time::Instant,
 };
 
 use clap::{command, Parser};
 use jieba_rs::Jieba;
+use log::{debug, info};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -71,10 +73,76 @@ impl ChineseSearchEngine {
 
     /// 返回与查询词匹配的文档中的一段文本。
     /// 这个实现尝试找到所有关键词匹配的最佳覆盖范围。
-    fn get_text_preview(&self, doc_id: String, query: String) {}
+    fn get_text_preview(
+        &self,
+        doc_id: String,
+        query_tokens: Vec<String>,
+        preview_length: usize,
+    ) -> String {
+        let text = self.docs.get(&doc_id).unwrap();
+
+        // let mut match_ranges = Vec::new();
+        let mut match_ranges = HashMap::new();
+
+        for token in &query_tokens {
+            let mut start_pos = 0;
+            while let Some(pos) = text[start_pos..].find(token) {
+                let start_char_pos = text[..start_pos + pos].chars().count();
+                let end_char_pos = start_char_pos + token.chars().count();
+                // match_ranges.push((start_char_pos, end_char_pos));
+                match_ranges
+                    .entry(token.clone())
+                    .or_insert(Vec::new())
+                    .push((start_char_pos, end_char_pos));
+                start_pos += pos + token.len();
+            }
+        }
+        debug!("{:?}, {}", match_ranges, match_ranges.len());
+
+        // let preview_length = 100;
+        // 找出匹配最多的关键词
+        if let Some((most_match_token, positions)) =
+            match_ranges.iter().max_by_key(|entry| entry.1.len())
+        {
+            debug!(
+                "most_match_token: {}, positions: {:?}",
+                most_match_token, positions
+            );
+            // 提取第一个匹配位置附近的50个字符作为摘要
+            if let Some(&(start_pos, end_pos)) = positions.first() {
+                let mut summary_start = 0;
+                let mut summary_end = 0;
+                if text.chars().count() <= preview_length {
+                    summary_start = 0;
+                    summary_end = text.chars().count();
+                } else if start_pos < preview_length / 2 {
+                    summary_start = 0;
+                    summary_end = preview_length;
+                } else if end_pos > text.chars().count() - preview_length / 2 {
+                    summary_start = text.chars().count() - preview_length;
+                    summary_end = text.chars().count();
+                } else {
+                    summary_start = start_pos - preview_length / 2;
+                    summary_end = start_pos + preview_length / 2;
+                }
+
+                let summary = text
+                    .chars()
+                    .skip(summary_start)
+                    .take(summary_end - summary_start)
+                    .collect::<String>();
+                debug!("Summary: '{}'", summary);
+                summary
+            } else {
+                "".to_string()
+            }
+        } else {
+            "".to_string()
+        }
+    }
 
     /// 搜索功能，支持多关键字查询
-    fn search(&self, query: String) -> Vec<(String, f64)> {
+    fn search(&self, query: String) -> Vec<(String, f64, String, String)> {
         // let jieba = Jieba::new();
         let query = preprocess_text(&query);
         let query_tokens = JIEBA
@@ -87,13 +155,13 @@ impl ChineseSearchEngine {
             .collect::<Vec<String>>();
 
         let mut docs_scores = HashMap::new();
-        println!("{:?}", query_tokens);
-        for token in query_tokens {
-            if self.inverted_index.contains_key(&token) {
+        info!("query_tokens: {:?}", query_tokens);
+        for token in &query_tokens {
+            if self.inverted_index.contains_key(token) {
                 let idf = self.compute_idf(token.clone());
-                for doc_id in self.inverted_index.get(&token).unwrap() {
+                for doc_id in self.inverted_index.get(token).unwrap() {
                     let doc_freq = self.doc_term_freq.get(doc_id).unwrap();
-                    let cur_token_freq = doc_freq.get(&token).unwrap();
+                    let cur_token_freq = doc_freq.get(token).unwrap();
                     let cur_token_freq_total = doc_freq.values().fold(0, |acc, x| acc + x);
                     let tf = *cur_token_freq as f64 / cur_token_freq_total as f64;
                     let entry = docs_scores.entry(doc_id.clone()).or_insert(0.0);
@@ -102,11 +170,18 @@ impl ChineseSearchEngine {
             }
         }
 
-        let mut result = Vec::new();
-        for (doc_id, score) in docs_scores {
-            result.push((doc_id, score));
+        let mut result: Vec<(String, f64, String, String)> = Vec::new();
+        for (doc_id, score) in docs_scores.iter() {
+            let summary = self.get_text_preview(doc_id.clone(), query_tokens.clone(), 100);
+            result.push((
+                doc_id.clone(),
+                *score,
+                self.doc_path.get(doc_id).unwrap().to_string(),
+                summary,
+            ));
         }
 
+        result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         result
     }
 }
@@ -178,6 +253,10 @@ struct Args {
 }
 
 fn main() {
+    env_logger::init();
+
+    info!("starting up");
+
     let args = Args::parse();
     let start = Instant::now();
     let mut engine = ChineseSearchEngine::new();
@@ -186,7 +265,7 @@ fn main() {
 
     let ignore_dirs = [".git", ".idea"];
     let ignore_exts = ["cpp", "py"];
-    println!("开始加载文档!");
+    info!("开始加载文档!");
     let filtered_paths = visit_dirs_and_filter(path, &ignore_dirs, &ignore_exts).unwrap();
     for path in filtered_paths {
         if path.extension().and_then(|e| e.to_str()) == Some("md") {
@@ -195,23 +274,42 @@ fn main() {
             let content = preprocess_text(&content);
             // 用一种方式来唯一标识每个文档，这里使用文件名
             let doc_id = path.file_name().unwrap().to_str().unwrap().to_string();
-            println!("正在导入 {} .", doc_id);
             engine.add_document(doc_id, path.to_str().unwrap().to_string(), content);
         }
     }
-    println!("文档加载完成!");
-    let d1 = start.elapsed();
-    println!("文档加载完成! 耗时 {:?}", d1); // 118.2912137s  -> 1.8479948s
-    let res = engine.search("世界经济学是一门非常大的社会科学".to_string());
-    println!("{:?}", res);
-    let d2 = start.elapsed();
-    println!("搜索耗时: {:?}", d2 - d1); // 1.0176191s  -> 6.8462ms
-    println!("Done!");
+    info!("文档加载完成!");
+    let duration = start.elapsed();
+    info!("文档加载完成! 耗时 {:?}", duration); // 118.2912137s  -> 1.8479948s
+                                                // 搜索
+    loop {
+        // 打印提示信息
+        print!("请输入搜索内容：");
+        io::stdout().flush().unwrap(); // 确保立即将输出显示到屏幕上
+
+        let mut input = String::new(); // 读取用户输入
+        io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim();
+        if input == "exit" {
+            break;
+        }
+        let start = Instant::now();
+        let result = engine.search(input.to_string());
+        println!("搜索结果: {:?}", result);
+        let duration = start.elapsed();
+        info!(
+            "共找到了 {} 个相关文档，搜索耗时: {:?}",
+            result.len(),
+            duration
+        ); // 1.0176191s  -> 6.8462ms
+    }
+
+    info!("Done!");
 }
 
 mod tests {
     use super::*;
 
+    use clap::builder::PossibleValuesParser;
     #[allow(unused_imports)]
     use jieba_rs::{Jieba, KeywordExtract, TextRank, TFIDF};
 
@@ -323,5 +421,92 @@ mod tests {
             .into_iter()
             .collect::<Vec<i32>>();
         println!("{:?}", s);
+    }
+
+    #[test]
+    fn test_sort() {
+        let mut results = vec![
+            ("字母异位分组.md".to_string(), 0.008654981139703252),
+            ("三数之和.md".to_string(), 0.008260629481059698),
+            ("最长连续序列.md".to_string(), 0.009235073709388456),
+            ("指数查找.md".to_string(), 0.00824086720957391),
+            ("Jieba.md".to_string(), 0.00824086720957391),
+        ];
+
+        // 按分数（即元组中的第二个元素）降序排序
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        // 打印排序后的结果
+        for result in results {
+            println!("{:?}: {}", result.0, result.1);
+        }
+    }
+
+    #[test]
+    fn test_text_preview() {
+        let path = Path::new(
+            r"C:\\Users\\maol\\Documents\\tmp\\ChineseSearchEngine\\SchoolChinese\\c\\flask_deploy.md",
+        );
+        let text = fs::read_to_string(path).expect("read_to_string failed");
+        // let mut match_ranges = Vec::new();
+        let mut match_ranges = HashMap::new();
+
+        let query_tokens = vec!["debug".to_string()];
+        for token in &query_tokens {
+            let mut start_pos = 0;
+            while let Some(pos) = text[start_pos..].find(token) {
+                let start_char_pos = text[..start_pos + pos].chars().count();
+                let end_char_pos = start_char_pos + token.chars().count();
+                // match_ranges.push((start_char_pos, end_char_pos));
+                match_ranges
+                    .entry(token.clone())
+                    .or_insert(Vec::new())
+                    .push((start_char_pos, end_char_pos));
+                start_pos += pos + token.len();
+            }
+        }
+        println!("{:?}, {}", match_ranges, match_ranges.len());
+        println!("text length: {}", text.chars().count());
+        let preview_length = 100;
+        // 找出匹配最多的关键词
+        if let Some((most_match_token, positions)) =
+            match_ranges.iter().max_by_key(|entry| entry.1.len())
+        {
+            println!(
+                "most_match_token: {}, positions: {:?}",
+                most_match_token, positions
+            );
+            // 提取第一个匹配位置附近的50个字符作为摘要
+            if let Some(&(start_pos, end_pos)) = positions.first() {
+                println!("{} {}", start_pos, end_pos);
+
+                let mut summary_start = 0;
+                let mut summary_end = 0;
+                if text.chars().count() <= preview_length {
+                    summary_start = 0;
+                    summary_end = text.chars().count();
+                } else if start_pos < preview_length / 2 {
+                    summary_start = 0;
+                    summary_end = preview_length;
+                } else if end_pos > text.chars().count() - preview_length / 2 {
+                    summary_start = text.chars().count() - preview_length;
+                    summary_end = text.chars().count();
+                } else {
+                    summary_start = start_pos - preview_length / 2;
+                    summary_end = start_pos + preview_length / 2;
+                }
+
+                println!(
+                    "summary_start, summary_end = {}, {}",
+                    summary_start, summary_end
+                );
+                let summary = text
+                    .chars()
+                    .skip(summary_start)
+                    .take(summary_end - summary_start)
+                    .collect::<String>();
+                println!("Summary: '{}'", summary);
+            }
+        }
     }
 }

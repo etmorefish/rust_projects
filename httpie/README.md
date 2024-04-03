@@ -3,6 +3,10 @@
 
 > Httpie is a command-line HTTP client.
 
+>运行截图
+![httpie get](./assets/get.png)
+![httpie post](./assets/post.png)
+
 Httpie 是一个简单易用的命令行 HTTP 客户端，用于发送 HTTP 请求和测试 API。这个 Rust 版本的 Httpie 保留了原版的简单易用性，同时提供了 Rust 语言的性能优势。
 
 ## 特性

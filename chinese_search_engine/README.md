@@ -1,5 +1,8 @@
 # 构建简易中文搜索引擎：Rust 实践指南
 
+>运行截图
+![cli search](./assets/2024-04-03%20161850.png)
+
 这个小程序实现了一个中文搜索引擎的基本框架，使用了 `jieba` 分词库来处理中文文本，并利用TF-IDF模型来评估文档中词语的重要性，从而实现对中文文档的搜索。整个搜索引擎的实现分为以下几个主要部分：
 
 1. **文档处理和索引构建**：通过遍历指定目录下的文件，将这些文件的内容转换为纯文本，并添加到搜索引擎中。在添加文档的过程中，利用 `jieba` 对文本进行分词，并构建倒排索引和计算文档中各词的出现频率。
@@ -20,3 +23,10 @@
 - 还可以考虑增加更多的用户交互特性，例如支持复杂的查询语法、提供更多的排序和过滤选项等，以提升用户使用体验。
 
 此脚本为构建一个基础的中文搜索引擎提供了一个很好的起点，通过进一步的优化和扩展，可以开发出功能更强大、用户体验更好的搜索工具。
+
+## build and run 
+```shell
+cargo build --package chinese_search_engine --bin chinese_search_engine
+
+$env:RUST_LOG="info" ;.\target\debug\chinese_search_engine -p C:\Users\maol\Documents\tmp\ChineseSearchEngine\SchoolChinese
+```
