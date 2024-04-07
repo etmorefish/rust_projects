@@ -1,5 +1,10 @@
 # 构建简易中文搜索引擎：Rust 实践指南
 
+⛓️本项目实现原理如下图所示， 过程包括加载文件 -> 读取文本 ->文本预处理 -> 中文分词 -> 构建倒排索引 -> 查询语句中文分词 -> 在倒排索引中匹配出与所有的token并按相关性计算TF-IDF得分 -> 预览文本生成 -> 按照TF-IDF 得分排序 -> 返回展示搜索结果，包括标题、摘要、URL等。
+
+![](https://cdn.jsdelivr.net/gh/etmorefish/picbed@main/chinese_search_engine.png)
+
+
 >运行截图
 ![cli search](./assets/2024-04-03%20161850.png)
 
