@@ -6,10 +6,29 @@ app = Flask(__name__)
 users_info = {
     'user1': {
         'email': 'user1@example.com',
-        'password': 'password1',
+        'password': '123',
         'name': 'User 1'
+    },
+    'user2': {
+        'email': 'user2@example.com',
+        'password': '123',
+        'name': 'User 2'
     }
 }
+
+@app.route('/logout')
+def logout():
+    # 假设从某处获取到了Token，例如从session或者直接从请求中
+    token = request.cookies.get('auth_token')
+    # 向认证中心发送登出请求
+    headers = {'Authorization': token}
+    response = requests.get('http://localhost:8000/logout', headers=headers)
+
+    if response.status_code == 200:
+        return f"Logout successfully!"
+    else:
+        # Token无效，重定向到登录页面
+        return redirect('http://localhost:8000/login?redirect_url=http://localhost:8001')
 
 @app.route('/')
 def home():
