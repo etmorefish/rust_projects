@@ -8,12 +8,15 @@ import jwt
 JWT_TOKEN_EXPIRE_TIME = 3600 * 2  # token有效时间 2小时
 JWT_SECRET = "sso-3E0C07FFFCFFF3E00E0039FCE00E7F387"  # 加解密密钥
 JWT_ALGORITHM = "HS256"  # 加解密算法
+
 # 设置日志
-logging.basicConfig(
-    level=logging.INFO,
-    filename="sso.log",
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# 创建文件处理程序
+file_handler = logging.FileHandler('sso.log')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
 app = Flask(__name__)
 app.secret_key = "idp-7F39F01FCE7FFE0318001C0670070E03F"
@@ -98,11 +101,13 @@ def logout():
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError:
+        logging.info("Token verification failed")
         return "Invalid Token.", 403
 
     jti = payload.get("jti")
     if jti in tokens:
         del tokens[jti]
+        logging.info(f"User {payload['username']} logged out.")
         return "Logged out successfully.", 200
     else:
         return "Invalid Token.", 403

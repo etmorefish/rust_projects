@@ -1,6 +1,8 @@
-from flask import Flask, request, redirect, jsonify
+from functools import wraps
+from flask import Flask, g, request, redirect, jsonify
 import requests
-
+from jwt import decode, ExpiredSignatureError, InvalidTokenError
+import jwt
 app = Flask(__name__)
 # 假设用户信息存储
 users_info = {
@@ -16,55 +18,55 @@ users_info = {
     }
 }
 
-@app.route('/logout')
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.cookies.get("auth_token")
+        if not token:
+            # 如果没有Token，重定向到登录页面
+            return redirect(
+                "http://localhost:8000/login?redirect_url=http://localhost:8002"
+            )
+
+        headers = {'Authorization': token}
+        response = requests.post('http://localhost:8000/verify', headers=headers)
+        if response.status_code == 200 and response.json()['status'] == 'valid':
+            g.username = response.json().get('username')
+        else:
+            return redirect("http://localhost:8000/login?redirect_url=http://localhost:8002")
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+@app.route("/logout")
+@token_required
 def logout():
     # 假设从某处获取到了Token，例如从session或者直接从请求中
-    token = request.cookies.get('auth_token')
+    token = request.cookies.get("auth_token")
     # 向认证中心发送登出请求
-    headers = {'Authorization': token}
-    response = requests.get('http://localhost:8000/logout', headers=headers)
+    headers = {"Authorization": token}
+    response = requests.get("http://localhost:8000/logout", headers=headers)
 
     if response.status_code == 200:
         return f"Logout successfully!"
     else:
         # Token无效，重定向到登录页面
-        return redirect('http://localhost:8000/login?redirect_url=http://localhost:8002')
+        return redirect("http://localhost:8000/login?redirect_url=http://localhost:8002")
 
-@app.route('/')
+@app.route("/")
+@token_required
 def home():
-    # token = request.args.get('Authorization', None)
-    token = request.cookies.get('auth_token')
-    if token:
-        # 验证Token
-        # response = requests.get('http://localhost:8000/verify', params={'token': token})
-        headers = {'Authorization': token}
-        response = requests.get('http://localhost:8000/verify', headers=headers)
-        if response.status_code == 200 and response.json()['status'] == 'valid':
-            username = response.json().get('username')
-            return f"This is app2, Welcome {username}! You are logged in."
-        else:
-            # Token无效，重定向到登录页面
-            return redirect('http://localhost:8000/login?redirect_url=http://localhost:8002')
-    else:
-        # 没有Token，重定向到登录页面
-        return redirect('http://localhost:8000/login?redirect_url=http://localhost:8002')
+    username = g.username
+    return f"This is app1, Welcome {username}! You are logged in."
 
-@app.route('/profile')
+
+@app.route("/profile")
+@token_required
 def profile():
-    # token = request.args.get('token', None)
-    token = request.cookies.get('auth_token')
-    if token:
-        # 验证Token
-        headers = {'Authorization': token}
-        response = requests.get('http://localhost:8000/verify', headers=headers)
-        if response.status_code == 200:
-            username = response.json().get('username')
-            user_info = users_info.get(username, {})
-            return jsonify(user_info)
-        else:
-            return jsonify({"error": "Invalid or expired token."}), 403
-    else:
-        return jsonify({"error": "No token provided."}), 401
+    username = g.username
+    user_info = users_info.get(username, {})
+    return jsonify(user_info)
 
 @app.route('/change-password', methods=['POST'])
 def change_password():

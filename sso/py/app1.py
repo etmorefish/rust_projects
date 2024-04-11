@@ -1,8 +1,7 @@
 from functools import wraps
 from flask import Flask, g, request, redirect, jsonify
 import requests
-from jwt import decode, ExpiredSignatureError, InvalidTokenError
-import jwt
+
 
 app = Flask(__name__)
 # 假设用户信息存储
@@ -14,6 +13,7 @@ users_info = {
 JWT_SECRET = "sso-3E0C07FFFCFFF3E00E0039FCE00E7F387"  # 加解密密钥
 JWT_ALGORITHM = "HS256"  # 加解密算法
 
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -24,12 +24,11 @@ def token_required(f):
                 "http://localhost:8000/login?redirect_url=http://localhost:8001"
             )
 
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            g.username = payload["username"]
-            # 你可以在这里添加更多的验证逻辑，如验证JWT中的claims
-        except (ExpiredSignatureError, InvalidTokenError):
-            # 如果Token无效或已过期，重定向到登录页面
+        headers = {"Authorization": token}
+        response = requests.post("http://localhost:8000/verify", headers=headers)
+        if response.status_code == 200 and response.json()["status"] == "valid":
+            g.username = response.json().get("username")
+        else:
             return redirect(
                 "http://localhost:8000/login?redirect_url=http://localhost:8001"
             )
@@ -62,7 +61,6 @@ def logout():
 def home():
     username = g.username
     return f"This is app1, Welcome {username}! You are logged in."
-
 
 
 @app.route("/profile")
