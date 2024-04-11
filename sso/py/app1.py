@@ -1,4 +1,5 @@
 from functools import wraps
+import time
 from flask import Flask, g, request, redirect, jsonify
 import requests
 
@@ -14,27 +15,30 @@ JWT_SECRET = "sso-3E0C07FFFCFFF3E00E0039FCE00E7F387"  # 加解密密钥
 JWT_ALGORITHM = "HS256"  # 加解密算法
 
 
+# 使用字典作为简单的缓存
+token_cache = {}
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = request.cookies.get("auth_token")
         if not token:
-            # 如果没有Token，重定向到登录页面
-            return redirect(
-                "http://localhost:8000/login?redirect_url=http://localhost:8001"
-            )
+            return redirect("http://localhost:8000/login?redirect_url=http://localhost:8001")
 
-        headers = {"Authorization": token}
-        response = requests.post("http://localhost:8000/verify", headers=headers)
-        if response.status_code == 200 and response.json()["status"] == "valid":
-            g.username = response.json().get("username")
+        # 检查缓存
+        cache_entry = token_cache.get(token)
+        if cache_entry and cache_entry['expire_time'] > time.time():
+            g.username = cache_entry['username']
         else:
-            return redirect(
-                "http://localhost:8000/login?redirect_url=http://localhost:8001"
-            )
-
+            headers = {'Authorization': token}
+            response = requests.get('http://localhost:8000/verify', headers=headers)
+            if response.status_code == 200 and response.json()['status'] == 'valid':
+                g.username = response.json().get('username')
+                # 更新缓存，这里假设 token 有效期为 5 分钟
+                token_cache[token] = {'username': g.username, 'expire_time': time.time() + 300}
+            else:
+                return redirect("http://localhost:8000/login?redirect_url=http://localhost:8001")
         return f(*args, **kwargs)
-
     return decorated
 
 
