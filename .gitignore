@@ -1,3 +1,13 @@
 /target
 .lock
 *.log
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.bak
+*.swp
+.vscode
+.idea
+.DS_Store
+.venv
