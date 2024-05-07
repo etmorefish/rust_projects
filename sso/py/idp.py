@@ -155,5 +155,28 @@ def register():
     return "User registered successfully.", 201
 
 
+"""
+webhooks = {}  # 新增webhooks存储
+
+@app.route("/register_webhook", methods=["POST"])
+def register_webhook():
+    data = request.json
+    username = data['username']
+    webhook_url = data['webhook_url']
+    if username not in webhooks:
+        webhooks[username] = set()
+    webhooks[username].add(webhook_url)
+    return jsonify({"message": "Webhook registered successfully."})
+    
+
+@app.route("/logout", methods=["GET"])
+def logout():
+  ...
+# 登出时触发webhooks
+        for url in webhooks.get(username, []):
+            # 实际中推荐异步发送
+            requests.post(url, json={"username": username})
+            logging.info("Webhook sent to {}".format(url))
+"""
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
